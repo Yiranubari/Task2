@@ -30,11 +30,17 @@ function getDbConnection()
     $dbname = $_ENV['DB_NAME'];
     $user = $_ENV['DB_USER'];
     $pass = $_ENV['DB_PASSWORD'];
-    // --- NEW LINE ADDED ---
-    $port = $_ENV['DB_PORT'];
 
-    // --- DSN UPDATED TO INCLUDE PORT ---
-    $dsn = "mysql:host=$host;port=$port;dbname=$dbname";
+    // --- THIS IS THE NEW, ROBUST LOGIC ---
+    // Build the DSN string
+    $dsn = "mysql:host=$host;dbname=$dbname";
+
+    // Check if a port is provided and add it
+    if (!empty($_ENV['DB_PORT'])) {
+        $port = $_ENV['DB_PORT'];
+        $dsn .= ";port=$port";
+    }
+    // --- END OF NEW LOGIC ---
 
     $options = [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
