@@ -1,12 +1,6 @@
 <?php
 
-/**
- * Loads environment variables from a .env file into the $_ENV superglobal.
- *
- * @param string $path The path to the .env file.
- * @return void
- */
-function loadEnv(string $path): void
+function loadEnv($path)
 {
     if (!file_exists($path)) {
         return;
@@ -30,40 +24,40 @@ function loadEnv(string $path): void
     }
 }
 
-/**
- * Creates and returns a PDO database connection.
- *
- * @return PDO The PDO database connection object.
- */
-function getDbConnection(): PDO
+function getDbConnection()
 {
     $host = $_ENV['DB_HOST'];
-    $db   = $_ENV['DB_NAME'];
+    $dbname = $_ENV['DB_NAME'];
     $user = $_ENV['DB_USER'];
     $pass = $_ENV['DB_PASSWORD'];
-    $charset = 'utf8mb4';
+    // --- NEW LINE ADDED ---
+    $port = $_ENV['DB_PORT'];
 
-    $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+    // --- DSN UPDATED TO INCLUDE PORT ---
+    $dsn = "mysql:host=$host;port=$port;dbname=$dbname";
+
     $options = [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_EMULATE_PREPARES   => false,
     ];
 
     return new PDO($dsn, $user, $pass, $options);
 }
 
+// Load environment variables
 loadEnv(__DIR__ . '/.env');
 
-global $pdo;
+$pdo = null;
 
 try {
     $pdo = getDbConnection();
-} catch (PDOException $e) {
+} catch (\PDOException $e) {
+    // Send a consistent JSON error
     header('Content-Type: application/json');
+    http_response_code(500);
     echo json_encode([
         'error' => 'Database connection failed',
         'details' => $e->getMessage()
     ]);
-    die();
+    die;
 }
