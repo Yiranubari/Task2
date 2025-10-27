@@ -3,24 +3,24 @@
 function generateSummaryImage($pdo)
 {
     try {
-        // --- 1. Fetch data from the database ---
-        $totalCountries = $pdo->query("SELECT COUNT(*) as total FROM countries")->fetch()['total'];
-        $lastRefreshed = $pdo->query("SELECT last_refreshed_at FROM status WHERE id = 1")->fetch()['last_refreshed_at'];
+        // --- FIX: Make DB queries safe for empty/null results ---
+        $totalResult = $pdo->query("SELECT COUNT(*) as total FROM countries")->fetch();
+        $statusResult = $pdo->query("SELECT last_refreshed_at FROM status WHERE id = 1")->fetch();
         $topCountries = $pdo->query("SELECT name, estimated_gdp FROM countries WHERE estimated_gdp IS NOT NULL ORDER BY estimated_gdp DESC LIMIT 5")->fetchAll();
 
-        // --- 2. Create the image canvas ---
+        $totalCountries = $totalResult ? (int)$totalResult['total'] : 0;
+        $lastRefreshed = $statusResult && $statusResult['last_refreshed_at'] ? $statusResult['last_refreshed_at'] : 'N/A';
+        // --- END OF FIX ---
+
         $width = 500;
         $height = 300;
         $image = imagecreate($width, $height);
-
-        // --- 3. Allocate colors ---
-        $bgColor = imagecolorallocate($image, 22, 22, 22); // Dark background
-        $textColor = imagecolorallocate($image, 255, 255, 255); // White text
-        $titleColor = imagecolorallocate($image, 70, 200, 255); // Light blue for title
-        $gdpColor = imagecolorallocate($image, 100, 255, 100); // Light green for GDP
+        $bgColor = imagecolorallocate($image, 22, 22, 22);
+        $textColor = imagecolorallocate($image, 255, 255, 255);
+        $titleColor = imagecolorallocate($image, 70, 200, 255);
+        $gdpColor = imagecolorallocate($image, 100, 255, 100);
         imagefill($image, 0, 0, $bgColor);
 
-        // --- 4. Draw the text ---
         $lineHeight = 20;
         $currentLine = 10;
         imagestring($image, 5, 10, $currentLine, "Country API Status Summary", $titleColor);
@@ -40,16 +40,11 @@ function generateSummaryImage($pdo)
             $currentLine += $lineHeight;
         }
 
-        // --- 5. Output the image directly ---
         header('Content-Type: image/png');
         imagepng($image);
-
-        // --- 6. Clean up memory ---
         imagedestroy($image);
-        die; // Stop script
-
+        die;
     } catch (Exception $e) {
-        // If it fails, create a small error image
         header('Content-Type: image/png');
         $errorImg = imagecreate(300, 50);
         $errBg = imagecolorallocate($errorImg, 255, 0, 0);

@@ -6,6 +6,7 @@ require_once __DIR__ . '/helpers.php';
 date_default_timezone_set('UTC');
 
 $requestMethod = $_SERVER['REQUEST_METHOD'];
+// FIX: Revert to query param routing
 $requestPath = isset($_GET['route']) ? $_GET['route'] : '/';
 
 switch ($requestMethod) {
@@ -14,91 +15,71 @@ switch ($requestMethod) {
             require_once "refresh.php";
             handleRefresh($pdo);
         } else {
-            // If it's a POST to any other path, it's a 404
             sendJsonResponse(['error' => 'Not Found', 'path_requested' => $requestPath], 404);
         }
         break;
 
     case 'GET':
-        // --- NEW BLOCK ADDED ---
         if ($requestPath === '/') {
             sendJsonResponse([
                 'status' => 'success',
                 'message' => 'HNG Stage 2 API is live and running.',
                 'github_repo' => 'https://github.com/Yiranubari/Task2'
             ], 200);
-            // --- END OF NEW BLOCK ---
-
         } else if ($requestPath === '/status') {
-            // Logic for status
+            // FIX: This logic is now safe and handles empty databases
             try {
-                // Get total countries
-                $stmt = $pdo->query("SELECT COUNT(*) as total FROM countries");
-                $totalCountries = $stmt->fetch()['total'];
+                $totalResult = $pdo->query("SELECT COUNT(*) as total FROM countries")->fetch();
+                $statusResult = $pdo->query("SELECT last_refreshed_at FROM status WHERE id = 1")->fetch();
 
-                // Get last refresh time
-                $stmt = $pdo->query("SELECT last_refreshed_at FROM status WHERE id = 1");
-                $lastRefreshed = $stmt->fetch()['last_refreshed_at'];
-
-                // Send the response
                 sendJsonResponse([
-                    'total_countries' => (int)$totalCountries,
-                    'last_refreshed_at' => $lastRefreshed
+                    'total_countries' => $totalResult ? (int)$totalResult['total'] : 0,
+                    'last_refreshed_at' => $statusResult ? $statusResult['last_refreshed_at'] : null
                 ], 200);
             } catch (PDOException $e) {
                 sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
             }
+        
         } else if ($requestPath === '/countries/image') {
-            // Include the image generation logic
             require_once __DIR__ . '/image.php';
-
-            // Call the function to generate and output the image
             generateSummaryImage($pdo);
+        
         } else if ($requestPath === '/countries') {
-            // Logic for getting all countries with filters
             try {
                 $sql = "SELECT * FROM countries";
                 $params = [];
                 $whereClauses = [];
 
-                // Add region filter
                 if (isset($_GET['region'])) {
                     $whereClauses[] = "region = ?";
                     $params[] = $_GET['region'];
                 }
-
-                // Add currency filter
                 if (isset($_GET['currency'])) {
                     $whereClauses[] = "currency_code = ?";
                     $params[] = $_GET['currency'];
                 }
-
-                // Combine WHERE clauses if any
                 if (count($whereClauses) > 0) {
                     $sql .= " WHERE " . implode(" AND ", $whereClauses);
                 }
-
-                // Add sorting
                 if (isset($_GET['sort'])) {
                     if ($_GET['sort'] === 'gdp_desc') {
                         $sql .= " ORDER BY estimated_gdp DESC";
                     }
                 }
 
-                // Prepare and execute the query
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
                 $countries = $stmt->fetchAll();
 
+                // FIX: Send empty array instead of 404 if no countries match
                 sendJsonResponse($countries, 200);
+
             } catch (PDOException $e) {
-                sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
+                sendJsonResponse(['error's => 'Database error', 'details' => $e->getMessage()], 500);
             }
         } else if (preg_match('/^\/countries\/(.+)$/', $requestPath, $matches)) {
-            // Logic for getting a single country by name
             try {
-                $countryName = urldecode($matches[1]); // Decode URL-encoded characters like %20
-
+                $countryName = urldecode($matches[1]);
                 $sql = "SELECT * FROM countries WHERE name = ?";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute([$countryName]);
@@ -113,22 +94,18 @@ switch ($requestMethod) {
                 sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
             }
         } else {
-            // All other GET requests are 404
             sendJsonResponse(['error' => 'Not Found', 'path_requested' => $requestPath], 404);
         }
         break;
 
     case 'DELETE':
         if (preg_match('/^\/countries\/(.+)$/', $requestPath, $matches)) {
-            // Logic for deleting a single country by name
             try {
                 $countryName = urldecode($matches[1]);
-
                 $sql = "DELETE FROM countries WHERE name = ?";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute([$countryName]);
 
-                // Check if any row was actually deleted
                 if ($stmt->rowCount() > 0) {
                     sendJsonResponse(['message' => 'Country deleted successfully'], 200);
                 } else {
@@ -138,13 +115,11 @@ switch ($requestMethod) {
                 sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
             }
         } else {
-            // All other DELETE requests are 404
             sendJsonResponse(['error' => 'Not Found', 'path_requested' => $requestPath], 404);
         }
         break;
 
     default:
-        // Handle other methods like PUT
         sendJsonResponse(['error' => 'Method Not Allowed', 'method' => $requestMethod], 405);
         break;
 }
