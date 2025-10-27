@@ -7,6 +7,9 @@ not file
 }
 rewrite @notFile /index.php?route={path}
 
-# Run PHP
-php_server
+# Run PHP and set the timeout
+php_server {
+# Set PHP INI settings directly
+php_ini max_execution_time 300
+}
 }
