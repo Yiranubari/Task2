@@ -5,7 +5,6 @@ require_once __DIR__ . '/helpers.php';
 
 // --- ADD THIS LINE ---
 // Set max execution time to 5 minutes (300 seconds) for ALL requests
-ini_set('max_execution_time', 300);
 
 date_default_timezone_set('UTC');
 

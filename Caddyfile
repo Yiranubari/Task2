@@ -1,8 +1,12 @@
 :8080 {
-    # This will be merged with Railway's default Caddy config.
-    # It tells the server:
-    # 1. Try to find the file as requested (e.g., /style.css)
-    # 2. Try to find it as a directory (e.g., /images/)
-    # 3. If it fails, rewrite to our index.php router.
-    try_files {path} {path}/ /index.php?route={path}
+    root * /app
+    
+    # Rewrite all non-file requests to our router
+    @notFile {
+        not file
+    }
+    rewrite @notFile /index.php?route={path}
+    
+    # Run PHP
+    php_server
 }
