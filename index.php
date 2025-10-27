@@ -7,6 +7,7 @@ date_default_timezone_set('UTC');
 
 $requestMethod = $_SERVER['REQUEST_METHOD'];
 $requestPath = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '/';
+$requestPath = isset($_GET['route']) ? $_GET['route'] : '/';
 
 switch ($requestMethod) {
     case 'POST':
