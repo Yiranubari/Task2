@@ -1,19 +1,8 @@
-{
-    # Tell Railway we're using PHP
-    order frankenphp before file_server
-}
-
-# Your domain
 :8080 {
-    # Set the root to the /app directory
-    root * /app
-
-    # Enable PHP
-    frankenphp
-
-    # Rewrite all requests that aren't files to index.php
-    @notFile {
-        not file
-    }
-    rewrite @notFile /index.php?route={path}
+    # This will be merged with Railway's default Caddy config.
+    # It tells the server:
+    # 1. Try to find the file as requested (e.g., /style.css)
+    # 2. Try to find it as a directory (e.g., /images/)
+    # 3. If it fails, rewrite to our index.php router.
+    try_files {path} {path}/ /index.php?route={path}
 }
