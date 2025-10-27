@@ -1,0 +1,7 @@
+{
+  "require": {
+    "ext-pdo_mysql": "*",
+    "ext-curl": "*",
+    "ext-gd": "*"
+  }
+}
