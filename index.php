@@ -6,7 +6,7 @@ require_once __DIR__ . '/helpers.php';
 date_default_timezone_set('UTC');
 
 $requestMethod = $_SERVER['REQUEST_METHOD'];
-$requestPath = isset($_GET['route']) ? $_GET['route'] : '/';
+$requestPath = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '/';
 
 switch ($requestMethod) {
     case 'POST':
