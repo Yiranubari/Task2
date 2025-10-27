@@ -138,7 +138,7 @@ function handleRefresh($pdo)
 
     // --- NEW LINE ADDED ---
     // Generate the summary image
-    generateSummaryImage($pdo);
+
 
     sendJsonResponse([
         'status' => 'success',

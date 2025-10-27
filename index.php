@@ -42,16 +42,12 @@ switch ($requestMethod) {
 
             // --- NEW BLOCK ADDED ---
         } else if ($requestPath === '/countries/image') {
-            $filePath = __DIR__ . '/cache/summary.png';
+            // Include the image generation logic
+            require_once __DIR__ . '/image.php';
 
-            if (file_exists($filePath)) {
-                // Send the correct header and output the image file
-                header('Content-Type: image/png');
-                readfile($filePath);
-                die; // Stop script execution
-            } else {
-                sendJsonResponse(['error' => 'Summary image not found'], 404);
-            }
+            // Call the function to generate and output the image
+            // This function now handles its own headers and output
+            generateSummaryImage($pdo);
             // --- END OF NEW BLOCK ---
 
         } else if ($requestPath === '/countries') {
