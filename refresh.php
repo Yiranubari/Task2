@@ -51,6 +51,10 @@ function fetchCountries()
 
 function handleRefresh($pdo)
 {
+    // --- THIS IS THE FIX ---
+    // Set max execution time to 5 minutes (300 seconds)
+    ini_set('max_execution_time', 300);
+
     $exchangeRates = fetchExchangeRates();
     if ($exchangeRates === false) {
         sendJsonResponse([
