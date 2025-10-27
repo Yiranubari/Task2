@@ -26,31 +26,31 @@ function loadEnv($path)
 
 function getDbConnection()
 {
-    $host = $_ENV['DB_HOST'];
-    $dbname = $_ENV['DB_NAME'];
-    $user = $_ENV['DB_USER'];
-    $pass = $_ENV['DB_PASSWORD'];
-    $dsn = "mysql:host=$host;dbname=$dbname";
+    // --- THIS IS THE FIX ---
+    // Use getenv() which is guaranteed to work on Railway
+    $host = getenv('DB_HOST');
+    $dbname = getenv('DB_NAME');
+    $user = getenv('DB_USER');
+    $pass = getenv('DB_PASSWORD');
+    $port = getenv('DB_PORT');
+    // --- END OF FIX ---
 
-    if (!empty($_ENV['DB_PORT'])) {
-        $port = $_ENV['DB_PORT'];
+    $dsn = "mysql:host=$host;dbname=$dbname";
+    if (!empty($port)) {
         $dsn .= ";port=$port";
     }
 
-    // --- NEW SSL OPTIONS ADDED ---
     $options = [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        // Add SSL options for Aiven
         PDO::MYSQL_ATTR_SSL_CA    => __DIR__ . '/ca.pem',
-        PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false, // May be needed if host doesn't match CN
+        PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,
     ];
-    // --- END OF NEW OPTIONS ---
 
     return new PDO($dsn, $user, $pass, $options);
 }
 
-// Load environment variables
+// Load environment variables (for local .env file)
 loadEnv(__DIR__ . '/.env');
 
 $pdo = null;
