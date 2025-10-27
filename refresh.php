@@ -51,8 +51,8 @@ function fetchCountries()
 
 function handleRefresh($pdo)
 {
-    // --- THIS IS THE FIX ---
-    // Set max execution time to 5 minutes (300 second
+    // --- THIS LINE WAS REMOVED ---
+    // ini_set('max_execution_time', 300); // This was moved inside the loop
 
     $exchangeRates = fetchExchangeRates();
     if ($exchangeRates === false) {
@@ -74,6 +74,10 @@ function handleRefresh($pdo)
 
     foreach ($countries as $countryData) {
         try {
+            // --- THIS IS THE FIX ---
+            // Reset the 30-second timer for each country
+            set_time_limit(30);
+
             $name = $countryData['name'];
             if (empty($name)) {
                 continue;
@@ -89,14 +93,18 @@ function handleRefresh($pdo)
             $estimated_gdp = null;
 
             if (isset($countryData['currencies']) && is_array($countryData['currencies']) && !empty($countryData['currencies'])) {
-                // --- BUG FIX HERE ---
                 // The API returns an *array* of currencies, we need the first one at index 0
                 $currency_code = $countryData['currencies'][0]['code'];
 
                 if ($currency_code !== null && array_key_exists($currency_code, $exchangeRates)) {
                     $exchange_rate = $exchangeRates[$currency_code];
                     $multiplier = rand(1000, 2000);
-                    $estimated_gdp = ($population * $multiplier) / $exchange_rate;
+                    // Avoid division by zero if exchange rate is somehow 0
+                    if ($exchange_rate != 0) {
+                        $estimated_gdp = ($population * $multiplier) / $exchange_rate;
+                    } else {
+                        $estimated_gdp = 0; // Or handle as null, depending on requirements
+                    }
                 } elseif ($currency_code !== null) {
                     $exchange_rate = null;
                     $estimated_gdp = null;
@@ -131,16 +139,14 @@ function handleRefresh($pdo)
             error_log("DB error for country: " . $e->getMessage());
             continue;
         }
-    }
+    } // End of foreach loop
+
     $stmt = $pdo->prepare("UPDATE status SET last_refreshed_at = CURRENT_TIMESTAMP WHERE id = 1");
     $stmt->execute();
 
     $stmt = $pdo->prepare("SELECT COUNT(*) as total FROM countries");
     $stmt->execute();
     $totalCountries = $stmt->fetch();
-
-    // --- NEW LINE ADDED ---
-    // Generate the summary image
 
 
     sendJsonResponse([
