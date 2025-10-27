@@ -3,8 +3,8 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 
-// --- ADD THIS LINE ---
 // Set max execution time to 5 minutes (300 seconds) for ALL requests
+// ini_set('max_execution_time', 300); // We leave this commented out for now, .user.ini should handle it.
 
 date_default_timezone_set('UTC');
 
@@ -30,7 +30,6 @@ switch ($requestMethod) {
                 'github_repo' => 'https://github.com/Yiranubari/Task2'
             ], 200);
         } else if ($requestPath === '/status') {
-            // FIX: This logic is now safe and handles empty databases
             try {
                 $totalResult = $pdo->query("SELECT COUNT(*) as total FROM countries")->fetch();
                 $statusResult = $pdo->query("SELECT last_refreshed_at FROM status WHERE id = 1")->fetch();
@@ -42,11 +41,9 @@ switch ($requestMethod) {
             } catch (PDOException $e) {
                 sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
             }
-        
         } else if ($requestPath === '/countries/image') {
             require_once __DIR__ . '/image.php';
             generateSummaryImage($pdo);
-        
         } else if ($requestPath === '/countries') {
             try {
                 $sql = "SELECT * FROM countries";
@@ -74,11 +71,10 @@ switch ($requestMethod) {
                 $stmt->execute($params);
                 $countries = $stmt->fetchAll();
 
-                // FIX: Send empty array instead of 404 if no countries match
                 sendJsonResponse($countries, 200);
-
             } catch (PDOException $e) {
-                sendJsonResponse(['error's => 'Database error', 'details' => $e->getMessage()], 500);
+                // --- THIS IS THE LINE I FIXED ---
+                sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
             }
         } else if (preg_match('/^\/countries\/(.+)$/', $requestPath, $matches)) {
             try {
