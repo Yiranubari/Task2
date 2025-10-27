@@ -20,7 +20,16 @@ switch ($requestMethod) {
         break;
 
     case 'GET':
-        if ($requestPath === '/status') {
+        // --- NEW BLOCK ADDED ---
+        if ($requestPath === '/') {
+            sendJsonResponse([
+                'status' => 'success',
+                'message' => 'HNG Stage 2 API is live and running.',
+                'github_repo' => 'https://github.com/Yiranubari/Task2'
+            ], 200);
+            // --- END OF NEW BLOCK ---
+
+        } else if ($requestPath === '/status') {
             // Logic for status
             try {
                 // Get total countries
@@ -39,17 +48,12 @@ switch ($requestMethod) {
             } catch (PDOException $e) {
                 sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
             }
-
-            // --- NEW BLOCK ADDED ---
         } else if ($requestPath === '/countries/image') {
             // Include the image generation logic
             require_once __DIR__ . '/image.php';
 
             // Call the function to generate and output the image
-            // This function now handles its own headers and output
             generateSummaryImage($pdo);
-            // --- END OF NEW BLOCK ---
-
         } else if ($requestPath === '/countries') {
             // Logic for getting all countries with filters
             try {
@@ -79,7 +83,6 @@ switch ($requestMethod) {
                     if ($_GET['sort'] === 'gdp_desc') {
                         $sql .= " ORDER BY estimated_gdp DESC";
                     }
-                    // (You could add more sort options here, e.g., 'name_asc')
                 }
 
                 // Prepare and execute the query
