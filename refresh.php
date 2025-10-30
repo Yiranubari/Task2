@@ -1,10 +1,6 @@
 <?php
+// This file is updated with transaction logic for speed.
 
-/**
- * Fetches the latest exchange rates from the API.
- *
- * @return array|false An array of exchange rates or false on failure.
- */
 require_once __DIR__ . '/image.php';
 function fetchExchangeRates()
 {
@@ -25,11 +21,6 @@ function fetchExchangeRates()
     return $data['rates'];
 }
 
-/**
- * Fetches country data from the API.
- *
- * @return array|false An array of country data or false on failure.
- */
 function fetchCountries()
 {
     $url = 'https://restcountries.com/v2/all?fields=name,capital,region,population,flag,currencies';
@@ -51,8 +42,10 @@ function fetchCountries()
 
 function handleRefresh($pdo)
 {
-    // --- THIS LINE WAS REMOVED ---
-    // ini_set('max_execution_time', 300); // This was moved inside the loop
+    // Set max time for the whole script (Caddyfile/ini.set might be ignored)
+    if (function_exists('set_time_limit')) {
+        set_time_limit(300); // 5 minutes just in case
+    }
 
     $exchangeRates = fetchExchangeRates();
     if ($exchangeRates === false) {
@@ -72,11 +65,25 @@ function handleRefresh($pdo)
 
     $countriesProcessed = 0;
 
-    foreach ($countries as $countryData) {
-        try {
-            // --- THIS IS THE FIX ---
-            // Reset the 30-second timer for each country
-            set_time_limit(30);
+    // --- START OF THE FIX: DATABASE TRANSACTION ---
+    $pdo->beginTransaction();
+    
+    try {
+        // Prepare statements *outside* the loop for efficiency
+        $selectStmt = $pdo->prepare("SELECT id FROM countries WHERE name = ?");
+        $insertStmt = $pdo->prepare(
+            "INSERT INTO countries (name, capital, region, population, currency_code, exchange_rate, estimated_gdp, flag_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $updateStmt = $pdo->prepare(
+            "UPDATE countries SET capital = ?, region = ?, population = ?, currency_code = ?, exchange_rate = ?, estimated_gdp = ?, flag_url = ?, last_refreshed_at = CURRENT_TIMESTAMP WHERE name = ?"
+        );
+
+        foreach ($countries as $countryData) {
+            
+            // Reset timer *inside* loop (this was our previous fix and is still good)
+            if (function_exists('set_time_limit')) {
+                set_time_limit(30);
+            }
 
             $name = $countryData['name'];
             if (empty($name)) {
@@ -93,17 +100,15 @@ function handleRefresh($pdo)
             $estimated_gdp = null;
 
             if (isset($countryData['currencies']) && is_array($countryData['currencies']) && !empty($countryData['currencies'])) {
-                // The API returns an *array* of currencies, we need the first one at index 0
                 $currency_code = $countryData['currencies'][0]['code'];
 
                 if ($currency_code !== null && array_key_exists($currency_code, $exchangeRates)) {
                     $exchange_rate = $exchangeRates[$currency_code];
                     $multiplier = rand(1000, 2000);
-                    // Avoid division by zero if exchange rate is somehow 0
                     if ($exchange_rate != 0) {
                         $estimated_gdp = ($population * $multiplier) / $exchange_rate;
                     } else {
-                        $estimated_gdp = 0; // Or handle as null, depending on requirements
+                         $estimated_gdp = 0;
                     }
                 } elseif ($currency_code !== null) {
                     $exchange_rate = null;
@@ -118,29 +123,32 @@ function handleRefresh($pdo)
             if (empty($name) || $population === null) {
                 continue;
             }
-            $stmt = $pdo->prepare("SELECT id FROM countries WHERE name = ?");
-            $stmt->execute([$name]);
-            $existingCountry = $stmt->fetch();
+            
+            $selectStmt->execute([$name]);
+            $existingCountry = $selectStmt->fetch();
 
             if ($existingCountry === false) {
-                $stmt = $pdo->prepare(
-                    "INSERT INTO countries (name, capital, region, population, currency_code, exchange_rate, estimated_gdp, flag_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-                );
-                $stmt->execute([$name, $capital, $region, $population, $currency_code, $exchange_rate, $estimated_gdp, $flag]);
+                $insertStmt->execute([$name, $capital, $region, $population, $currency_code, $exchange_rate, $estimated_gdp, $flag]);
             } else {
-                $stmt = $pdo->prepare(
-                    "UPDATE countries SET capital = ?, region = ?, population = ?, currency_code = ?, exchange_rate = ?, estimated_gdp = ?, flag_url = ?, last_refreshed_at = CURRENT_TIMESTAMP WHERE name = ?"
-                );
-                $stmt->execute([$capital, $region, $population, $currency_code, $exchange_rate, $estimated_gdp, $flag, $name]);
+                $updateStmt->execute([$capital, $region, $population, $currency_code, $exchange_rate, $estimated_gdp, $flag, $name]);
             }
 
             $countriesProcessed++;
-        } catch (PDOException $e) {
-            error_log("DB error for country: " . $e->getMessage());
-            continue;
         }
-    } // End of foreach loop
 
+        // --- COMMIT THE TRANSACTION ---
+        // All 250 queries are sent to the DB at once here.
+        $pdo->commit();
+
+    } catch (Exception $e) {
+        // --- ROLLBACK ON FAILURE ---
+        $pdo->rollBack();
+        error_log("DB transaction error: " . $e->getMessage());
+        // Send a 500 error since the refresh failed
+        sendJsonResponse(['error' => 'Database transaction failed', 'details' => $e->getMessage()], 500);
+    }
+    // --- END OF THE FIX ---
+    
     $stmt = $pdo->prepare("UPDATE status SET last_refreshed_at = CURRENT_TIMESTAMP WHERE id = 1");
     $stmt->execute();
 

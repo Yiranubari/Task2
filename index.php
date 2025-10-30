@@ -1,15 +1,12 @@
 <?php
+// This file is updated to fix filters, sorting, and timestamp format.
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 
-// Set max execution time to 5 minutes (300 seconds) for ALL requests
-// ini_set('max_execution_time', 300); // We leave this commented out for now, .user.ini should handle it.
-
 date_default_timezone_set('UTC');
 
 $requestMethod = $_SERVER['REQUEST_METHOD'];
-// FIX: Revert to query param routing
 $requestPath = isset($_GET['route']) ? $_GET['route'] : '/';
 
 switch ($requestMethod) {
@@ -34,9 +31,14 @@ switch ($requestMethod) {
                 $totalResult = $pdo->query("SELECT COUNT(*) as total FROM countries")->fetch();
                 $statusResult = $pdo->query("SELECT last_refreshed_at FROM status WHERE id = 1")->fetch();
 
+                $lastRefreshed = $statusResult ? $statusResult['last_refreshed_at'] : null;
+
+                // --- FIX 3: FORMAT TIMESTAMP TO ISO 8601 ---
+                $isoTimestamp = $lastRefreshed ? gmdate("Y-m-d\TH:i:s\Z", strtotime($lastRefreshed)) : null;
+
                 sendJsonResponse([
                     'total_countries' => $totalResult ? (int)$totalResult['total'] : 0,
-                    'last_refreshed_at' => $statusResult ? $statusResult['last_refreshed_at'] : null
+                    'last_refreshed_at' => $isoTimestamp
                 ], 200);
             } catch (PDOException $e) {
                 sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
@@ -50,22 +52,32 @@ switch ($requestMethod) {
                 $params = [];
                 $whereClauses = [];
 
+                // --- FIX 1: MAKE FILTERS CASE-INSENSITIVE ---
                 if (isset($_GET['region'])) {
-                    $whereClauses[] = "region = ?";
+                    $whereClauses[] = "LOWER(region) = LOWER(?)";
                     $params[] = $_GET['region'];
                 }
                 if (isset($_GET['currency'])) {
-                    $whereClauses[] = "currency_code = ?";
+                    $whereClauses[] = "LOWER(currency_code) = LOWER(?)";
                     $params[] = $_GET['currency'];
                 }
+                // --- END OF FIX 1 ---
+
                 if (count($whereClauses) > 0) {
                     $sql .= " WHERE " . implode(" AND ", $whereClauses);
                 }
+
+                // --- FIX 2: MAKE SORTING HANDLE NULLS ---
                 if (isset($_GET['sort'])) {
                     if ($_GET['sort'] === 'gdp_desc') {
-                        $sql .= " ORDER BY estimated_gdp DESC";
+                        $sql .= " ORDER BY estimated_gdp DESC NULLS LAST";
                     }
+                    // You could add 'name_asc' here too
+                    // else if ($_GET['sort'] === 'name_asc') {
+                    //     $sql .= " ORDER BY name ASC";
+                    // }
                 }
+                // --- END OF FIX 2 ---
 
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
@@ -73,7 +85,6 @@ switch ($requestMethod) {
 
                 sendJsonResponse($countries, 200);
             } catch (PDOException $e) {
-                // --- THIS IS THE LINE I FIXED ---
                 sendJsonResponse(['error' => 'Database error', 'details' => $e->getMessage()], 500);
             }
         } else if (preg_match('/^\/countries\/(.+)$/', $requestPath, $matches)) {
