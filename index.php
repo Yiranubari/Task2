@@ -1,5 +1,5 @@
 <?php
-// This file is updated to fix filters, sorting, and timestamp format.
+// This file is updated with correct MySQL sorting syntax.
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
@@ -30,10 +30,7 @@ switch ($requestMethod) {
             try {
                 $totalResult = $pdo->query("SELECT COUNT(*) as total FROM countries")->fetch();
                 $statusResult = $pdo->query("SELECT last_refreshed_at FROM status WHERE id = 1")->fetch();
-
                 $lastRefreshed = $statusResult ? $statusResult['last_refreshed_at'] : null;
-
-                // --- FIX 3: FORMAT TIMESTAMP TO ISO 8601 ---
                 $isoTimestamp = $lastRefreshed ? gmdate("Y-m-d\TH:i:s\Z", strtotime($lastRefreshed)) : null;
 
                 sendJsonResponse([
@@ -52,7 +49,7 @@ switch ($requestMethod) {
                 $params = [];
                 $whereClauses = [];
 
-                // --- FIX 1: MAKE FILTERS CASE-INSENSITIVE ---
+                // Case-insensitive filters
                 if (isset($_GET['region'])) {
                     $whereClauses[] = "LOWER(region) = LOWER(?)";
                     $params[] = $_GET['region'];
@@ -61,23 +58,19 @@ switch ($requestMethod) {
                     $whereClauses[] = "LOWER(currency_code) = LOWER(?)";
                     $params[] = $_GET['currency'];
                 }
-                // --- END OF FIX 1 ---
 
                 if (count($whereClauses) > 0) {
                     $sql .= " WHERE " . implode(" AND ", $whereClauses);
                 }
 
-                // --- FIX 2: MAKE SORTING HANDLE NULLS ---
+                // --- THIS IS THE FIX for MySQL SORTING ---
                 if (isset($_GET['sort'])) {
                     if ($_GET['sort'] === 'gdp_desc') {
-                        $sql .= " ORDER BY estimated_gdp DESC NULLS LAST";
+                        // This syntax puts NULLs last (as 0) and sorts the rest DESC.
+                        $sql .= " ORDER BY estimated_gdp IS NULL ASC, estimated_gdp DESC";
                     }
-                    // You could add 'name_asc' here too
-                    // else if ($_GET['sort'] === 'name_asc') {
-                    //     $sql .= " ORDER BY name ASC";
-                    // }
                 }
-                // --- END OF FIX 2 ---
+                // --- END OF FIX ---
 
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);

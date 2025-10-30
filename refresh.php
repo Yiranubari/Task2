@@ -1,5 +1,5 @@
 <?php
-// This file is updated with transaction logic for speed.
+// This file is updated with a high-speed "upsert" query.
 
 require_once __DIR__ . '/image.php';
 function fetchExchangeRates()
@@ -12,11 +12,7 @@ function fetchExchangeRates()
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-
-    if ($httpCode !== 200) {
-        return false;
-    }
-
+    if ($httpCode !== 200) return false;
     $data = json_decode($response, true);
     return $data['rates'];
 }
@@ -31,64 +27,57 @@ function fetchCountries()
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-
-    if ($httpCode !== 200) {
-        return false;
-    }
-
+    if ($httpCode !== 200) return false;
     return json_decode($response, true);
 }
 
 
 function handleRefresh($pdo)
 {
-    // Set max time for the whole script (Caddyfile/ini.set might be ignored)
+    // Set a high time limit, just in case.
     if (function_exists('set_time_limit')) {
-        set_time_limit(300); // 5 minutes just in case
+        set_time_limit(300); // 5 minutes
     }
 
     $exchangeRates = fetchExchangeRates();
     if ($exchangeRates === false) {
-        sendJsonResponse([
-            'error' => 'External data source unavailable',
-            'details' => 'Could not fetch data from Exchange Rate API'
-        ], 503);
+        sendJsonResponse(['error' => 'External data source unavailable', 'details' => 'Could not fetch data from Exchange Rate API'], 503);
     }
 
     $countries = fetchCountries();
     if ($countries === false) {
-        sendJsonResponse([
-            'error' => 'External data source unavailable',
-            'details' => 'Could not fetch data from Rest Countries API'
-        ], 503);
+        sendJsonResponse(['error' => 'External data source unavailable', 'details' => 'Could not fetch data from Rest Countries API'], 503);
     }
 
     $countriesProcessed = 0;
 
-    // --- START OF THE FIX: DATABASE TRANSACTION ---
     $pdo->beginTransaction();
-    
     try {
-        // Prepare statements *outside* the loop for efficiency
-        $selectStmt = $pdo->prepare("SELECT id FROM countries WHERE name = ?");
-        $insertStmt = $pdo->prepare(
-            "INSERT INTO countries (name, capital, region, population, currency_code, exchange_rate, estimated_gdp, flag_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-        );
-        $updateStmt = $pdo->prepare(
-            "UPDATE countries SET capital = ?, region = ?, population = ?, currency_code = ?, exchange_rate = ?, estimated_gdp = ?, flag_url = ?, last_refreshed_at = CURRENT_TIMESTAMP WHERE name = ?"
-        );
+        // --- THIS IS THE SPEED FIX ---
+        // Prepare one single "upsert" (Update or Insert) statement.
+        // This is much faster than SELECT + (INSERT or UPDATE).
+        $sql = "INSERT INTO countries (name, capital, region, population, currency_code, exchange_rate, estimated_gdp, flag_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    capital = VALUES(capital),
+                    region = VALUES(region),
+                    population = VALUES(population),
+                    currency_code = VALUES(currency_code),
+                    exchange_rate = VALUES(exchange_rate),
+                    estimated_gdp = VALUES(estimated_gdp),
+                    flag_url = VALUES(flag_url),
+                    last_refreshed_at = CURRENT_TIMESTAMP";
+        $upsertStmt = $pdo->prepare($sql);
+        // --- END OF SPEED FIX ---
 
         foreach ($countries as $countryData) {
-            
-            // Reset timer *inside* loop (this was our previous fix and is still good)
+
             if (function_exists('set_time_limit')) {
-                set_time_limit(30);
+                set_time_limit(30); // Reset timer in loop
             }
 
             $name = $countryData['name'];
-            if (empty($name)) {
-                continue;
-            }
+            if (empty($name)) continue;
 
             $population = $countryData['population'];
             $capital = $countryData['capital'] ?? null;
@@ -108,7 +97,7 @@ function handleRefresh($pdo)
                     if ($exchange_rate != 0) {
                         $estimated_gdp = ($population * $multiplier) / $exchange_rate;
                     } else {
-                         $estimated_gdp = 0;
+                        $estimated_gdp = 0;
                     }
                 } elseif ($currency_code !== null) {
                     $exchange_rate = null;
@@ -120,42 +109,36 @@ function handleRefresh($pdo)
                 $estimated_gdp = 0;
             }
 
-            if (empty($name) || $population === null) {
-                continue;
-            }
-            
-            $selectStmt->execute([$name]);
-            $existingCountry = $selectStmt->fetch();
+            if (empty($name) || $population === null) continue;
 
-            if ($existingCountry === false) {
-                $insertStmt->execute([$name, $capital, $region, $population, $currency_code, $exchange_rate, $estimated_gdp, $flag]);
-            } else {
-                $updateStmt->execute([$capital, $region, $population, $currency_code, $exchange_rate, $estimated_gdp, $flag, $name]);
-            }
+            // Execute the single "upsert" query
+            $upsertStmt->execute([
+                $name,
+                $capital,
+                $region,
+                $population,
+                $currency_code,
+                $exchange_rate,
+                $estimated_gdp,
+                $flag
+            ]);
 
             $countriesProcessed++;
         }
 
-        // --- COMMIT THE TRANSACTION ---
-        // All 250 queries are sent to the DB at once here.
         $pdo->commit();
-
     } catch (Exception $e) {
-        // --- ROLLBACK ON FAILURE ---
         $pdo->rollBack();
         error_log("DB transaction error: " . $e->getMessage());
-        // Send a 500 error since the refresh failed
         sendJsonResponse(['error' => 'Database transaction failed', 'details' => $e->getMessage()], 500);
     }
-    // --- END OF THE FIX ---
-    
+
     $stmt = $pdo->prepare("UPDATE status SET last_refreshed_at = CURRENT_TIMESTAMP WHERE id = 1");
     $stmt->execute();
 
     $stmt = $pdo->prepare("SELECT COUNT(*) as total FROM countries");
     $stmt->execute();
     $totalCountries = $stmt->fetch();
-
 
     sendJsonResponse([
         'status' => 'success',
